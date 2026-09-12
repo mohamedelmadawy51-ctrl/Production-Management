@@ -559,6 +559,7 @@
   const firebaseConfig = {
     apiKey: "AIzaSyCNPkhZB_HI2PxegRPkBxj_NaTbMupvudU",
     authDomain: "production-management-v2.firebaseapp.com",
+    databaseURL: "https://production-management-v2-default-rtdb.firebaseio.com",
     projectId: "production-management-v2",
     storageBucket: "production-management-v2.firebasestorage.app",
     messagingSenderId: "983463168876",
@@ -568,28 +569,42 @@
   const fbDb = fbApp.database();
 
   // ---------- Storage ----------
+  // Data is stored as a proper tree under /pms, one node per collection, keyed by
+  // each record's own id (e.g. /pms/customerPOs/<id> = {...po}) instead of one giant
+  // JSON string per collection. This means each record is individually visible and
+  // editable in the Firebase console, and writes touch actual object paths.
+  function arrToMap(arr, keyField){
+    keyField = keyField || "id";
+    const o = {};
+    (arr||[]).forEach(item=>{ if(item && item[keyField]!=null) o[String(item[keyField])] = item; });
+    return o;
+  }
+  function mapToArr(map){
+    if(!map || typeof map !== "object") return [];
+    return Object.keys(map).sort().map(k=> map[k]);
+  }
   async function loadAll(){
     try{
       const [po, prod, mrp, pr, batches, mi, prodOrders, fg, rets, varApp, role, mats, custs, dels] = await Promise.all([
-        safeGet("pms_customer_pos"), safeGet("pms_products"), safeGet("pms_mrp"), safeGet("pms_pr"),
-        safeGet("pms_batches"), safeGet("pms_mi"), safeGet("pms_prodorders"), safeGet("pms_fg"),
-        safeGet("pms_returns"), safeGet("pms_variance_approvals"), safeGet("pms_role"),
-        safeGet("pms_materials"), safeGet("pms_customers"), safeGet("pms_deliveries")
+        safeGet("pms/customerPOs"), safeGet("pms/products"), safeGet("pms/mrpResults"), safeGet("pms/purchaseReqs"),
+        safeGet("pms/batches"), safeGet("pms/materialIssues"), safeGet("pms/productionOrders"), safeGet("pms/finishedGoods"),
+        safeGet("pms/returns"), safeGet("pms/varianceApprovals"), safeGet("pms/settings/role"),
+        safeGet("pms/materials"), safeGet("pms/customers"), safeGet("pms/deliveries")
       ]);
-      if(mats){ const m = JSON.parse(mats); RAW_MATERIALS_LIB = m.raw||RAW_MATERIALS_LIB; PACKAGING_LIB = m.packaging||PACKAGING_LIB; }
-      if(po) state.customerPOs = JSON.parse(po);
-      if(prod) state.products = JSON.parse(prod);
-      if(mrp) state.mrpResults = JSON.parse(mrp);
-      if(pr) state.purchaseReqs = JSON.parse(pr);
-      if(batches) state.batches = JSON.parse(batches); else seedOpeningBatches();
-      if(mi) state.materialIssues = JSON.parse(mi);
-      if(prodOrders) state.productionOrders = JSON.parse(prodOrders);
-      if(fg) state.finishedGoods = JSON.parse(fg);
-      if(rets) state.returns = JSON.parse(rets);
-      if(varApp) state.varianceApprovals = JSON.parse(varApp);
+      if(mats){ RAW_MATERIALS_LIB = mapToArr(mats.raw) .length? mapToArr(mats.raw) : RAW_MATERIALS_LIB; PACKAGING_LIB = mapToArr(mats.packaging).length? mapToArr(mats.packaging) : PACKAGING_LIB; }
+      if(po) state.customerPOs = mapToArr(po);
+      if(prod) state.products = mapToArr(prod);
+      if(mrp) state.mrpResults = mapToArr(mrp);
+      if(pr) state.purchaseReqs = mapToArr(pr);
+      if(batches) state.batches = mapToArr(batches); else seedOpeningBatches();
+      if(mi) state.materialIssues = mapToArr(mi);
+      if(prodOrders) state.productionOrders = mapToArr(prodOrders);
+      if(fg) state.finishedGoods = mapToArr(fg);
+      if(rets) state.returns = mapToArr(rets);
+      if(varApp) state.varianceApprovals = varApp;
       if(role) currentRole = role;
-      if(custs) state.customers = JSON.parse(custs); else seedDemoCustomer();
-      if(dels) state.deliveries = JSON.parse(dels);
+      if(custs) state.customers = mapToArr(custs); else seedDemoCustomer();
+      if(dels) state.deliveries = mapToArr(dels);
       if(!prod){ seedDemoProducts(); }
     }catch(err){ console.error("load failed", err); seedDemoProducts(); }
     document.getElementById("role-select").value = currentRole;
@@ -598,35 +613,35 @@
   }
   document.getElementById("role-select").addEventListener("change", (e)=>{
     currentRole = e.target.value;
-    persist("pms_role", currentRole);
+    persist("pms/settings/role", currentRole);
     applyStaticPermissions();
     renderAll();
     toast(`Switched to ${currentRole} role`);
   });
-  async function safeGet(key){
+  async function safeGet(path){
     try{
-      const snap = await fbDb.ref(key).once("value");
+      const snap = await fbDb.ref(path).once("value");
       const v = snap.val();
       return (v === null || v === undefined) ? null : v;
-    }catch(e){ console.error("load failed", key, e); return null; }
+    }catch(e){ console.error("load failed", path, e); return null; }
   }
-  async function persist(key, val){
-    try{ await fbDb.ref(key).set(JSON.stringify(val)); }
-    catch(e){ console.error("save failed", key, e); }
+  async function persist(path, val){
+    try{ await fbDb.ref(path).set(val); }
+    catch(e){ console.error("save failed", path, e); toast("⚠️ Save failed — check connection/Firebase rules"); }
   }
-  const saveMaterials = () => persist("pms_materials", { raw: RAW_MATERIALS_LIB, packaging: PACKAGING_LIB });
-  const saveCustomers = () => persist("pms_customers", state.customers);
-  const saveDeliveries = () => persist("pms_deliveries", state.deliveries);
-  const savePOs = () => persist("pms_customer_pos", state.customerPOs);
-  const saveProducts = () => persist("pms_products", state.products);
-  const saveMRP = () => persist("pms_mrp", state.mrpResults);
-  const savePR = () => persist("pms_pr", state.purchaseReqs);
-  const saveBatches = () => persist("pms_batches", state.batches);
-  const saveMI = () => persist("pms_mi", state.materialIssues);
-  const saveProdOrders = () => persist("pms_prodorders", state.productionOrders);
-  const saveFG = () => persist("pms_fg", state.finishedGoods);
-  const saveReturns = () => persist("pms_returns", state.returns);
-  const saveVarianceApprovals = () => persist("pms_variance_approvals", state.varianceApprovals);
+  const saveMaterials = () => persist("pms/materials", { raw: arrToMap(RAW_MATERIALS_LIB,"code"), packaging: arrToMap(PACKAGING_LIB,"code") });
+  const saveCustomers = () => persist("pms/customers", arrToMap(state.customers));
+  const saveDeliveries = () => persist("pms/deliveries", arrToMap(state.deliveries));
+  const savePOs = () => persist("pms/customerPOs", arrToMap(state.customerPOs));
+  const saveProducts = () => persist("pms/products", arrToMap(state.products));
+  const saveMRP = () => persist("pms/mrpResults", arrToMap(state.mrpResults));
+  const savePR = () => persist("pms/purchaseReqs", arrToMap(state.purchaseReqs));
+  const saveBatches = () => persist("pms/batches", arrToMap(state.batches));
+  const saveMI = () => persist("pms/materialIssues", arrToMap(state.materialIssues));
+  const saveProdOrders = () => persist("pms/productionOrders", arrToMap(state.productionOrders));
+  const saveFG = () => persist("pms/finishedGoods", arrToMap(state.finishedGoods));
+  const saveReturns = () => persist("pms/returns", arrToMap(state.returns));
+  const saveVarianceApprovals = () => persist("pms/varianceApprovals", state.varianceApprovals);
 
   function seedOpeningBatches(){
     const oneYear = new Date(); oneYear.setFullYear(oneYear.getFullYear()+1);
