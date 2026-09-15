@@ -1,0 +1,39 @@
+{
+  "name": "IFT FeedTechnology — Production Management System",
+  "short_name": "IFT PMS",
+  "description": "IFT FeedTechnology Production Management System — Customer PO to Delivery, MRP, Warehouse, Production, Quality, and full traceability.",
+  "start_url": "./IFT-Production-Management-System.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B2E5C",
+  "theme_color": "#0B2E5C",
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
