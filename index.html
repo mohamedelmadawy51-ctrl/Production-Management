@@ -414,7 +414,7 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     <div class="field" style="margin-bottom:14px;">
       <label>Role</label>
       <select id="login-role">
-        <option>Admin</option><option>Management</option><option>Sales</option><option>Planning</option>
+        <option>Admin</option><option>Owner</option><option>Management</option><option>Sales</option><option>Planning</option>
         <option>Purchasing</option><option>Warehouse</option><option>Production</option><option>Quality</option>
       </select>
     </div>
@@ -439,7 +439,7 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     <div style="padding:0 22px 14px;">
       <label style="font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(234,241,255,0.45);display:block;margin-bottom:5px;">Logged in as</label>
       <select id="role-select" hidden style="display:none;width:100%;font-family:'Inter',sans-serif;font-size:12.5px;font-weight:600;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#EAF1FF;outline:none;">
-        <option>Admin</option><option>Management</option><option>Sales</option><option>Planning</option>
+        <option>Admin</option><option>Owner</option><option>Management</option><option>Sales</option><option>Planning</option>
         <option>Purchasing</option><option>Warehouse</option><option>Production</option><option>Quality</option>
       </select>
       <div class="role-card">
@@ -623,7 +623,7 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
   var PMS = window.PMS = window.PMS || {};
 
   // ---------- State ----------
-  let state = { customerPOs: [], products: [], mrpResults: [], purchaseReqs: [], batches: [], materialIssues: [], productionOrders: [], finishedGoods: [], returns: [], varianceApprovals: {}, customers: [], deliveries: [] };
+  let state = { customerPOs: [], products: [], mrpResults: [], purchaseReqs: [], suppliers: [], supplierOrders: [], batches: [], materialIssues: [], productionOrders: [], finishedGoods: [], returns: [], varianceApprovals: {}, customers: [], deliveries: [] };
   let currentView = "dashboard";
   let poFilter = "all";
   let whTab = "grn";
@@ -655,8 +655,8 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
   // ---------- Roles & Permissions ----------
   let currentRole = "Admin";
   let isAuthenticated = false;
-  const ALL_ROLES = ["Admin","Management","Sales","Planning","Purchasing","Warehouse","Production","Quality"];
-  const DEFAULT_PASSWORDS = { Admin:"admin123", Management:"manage123", Sales:"sales123", Planning:"plan123",
+  const ALL_ROLES = ["Admin","Owner","Management","Sales","Planning","Purchasing","Warehouse","Production","Quality"];
+  const DEFAULT_PASSWORDS = { Admin:"admin123", Owner:"owner123", Management:"manage123", Sales:"sales123", Planning:"plan123",
     Purchasing:"purch123", Warehouse:"wh123", Production:"prod123", Quality:"qc123" };
   let rolePasswords = Object.assign({}, DEFAULT_PASSWORDS);
   const ROLE_PERMS = {
@@ -675,6 +675,7 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     inprocessQC: ["Quality","Admin"],
     fgQC: ["Quality","Admin"],
     approveVariance: ["Management","Admin"],
+    managePurchasing: ["Purchasing","Owner","Admin"],
   };
   function canDo(perm){ return (ROLE_PERMS[perm]||[]).includes(currentRole); }
   function viewOnlyNote(roleLabel){ return `<span class="hint">View only — requires ${esc(roleLabel)} role</span>`; }
@@ -688,7 +689,7 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
       if(el) el.disabled = !canDo(perm);
     });
     const pwLink = document.getElementById("manage-passwords-link");
-    if(pwLink) pwLink.style.display = (currentRole==="Admin") ? "inline-block" : "none";
+    if(pwLink) pwLink.style.display = (currentRole==="Admin"||currentRole==="Owner") ? "inline-block" : "none";
   }
 
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
@@ -806,6 +807,11 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     const year = new Date().getFullYear();
     const countThisYear = state.purchaseReqs.filter(p=>p.prNumber && p.prNumber.includes("-"+year+"-")).length;
     return `PR-${year}-${pad(countThisYear+1,5)}`;
+  }
+  function nextSPONumber(){
+    const year = new Date().getFullYear();
+    const n = state.supplierOrders.filter(o=>o.spoNumber && o.spoNumber.includes("-"+year+"-")).length;
+    return `SPO-${year}-${pad(n+1,5)}`;
   }
   function todayStamp(){ return todayISO().replace(/-/g,""); }
   function nextGRNNumber(){
@@ -1066,6 +1072,9 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
       if(pwds) rolePasswords = Object.assign({}, DEFAULT_PASSWORDS, pwds);
       if(custs) state.customers = mapToArr(custs); else seedDemoCustomer();
       if(dels) state.deliveries = mapToArr(dels);
+      const [sup, spo] = await Promise.all([safeGet("pms/suppliers"), safeGet("pms/supplierOrders")]);
+      if(sup) state.suppliers = mapToArr(sup);
+      if(spo) state.supplierOrders = mapToArr(spo);
       if(!prod){ seedDemoProducts(); }
     }catch(err){ console.error("load failed", err); seedDemoProducts(); }
     if(persistedRole && ALL_ROLES.includes(persistedRole)){ document.getElementById("login-role").value = persistedRole; }
@@ -1165,6 +1174,8 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
   const savePOs = () => persist("pms/customerPOs", arrToMap(state.customerPOs));
   const saveProducts = () => persist("pms/products", arrToMap(state.products));
   const saveMRP = () => persist("pms/mrpResults", arrToMap(state.mrpResults));
+  const saveSuppliers = () => persist("pms/suppliers", arrToMap(state.suppliers));
+  const saveSPO = () => persist("pms/supplierOrders", arrToMap(state.supplierOrders));
   const savePR = () => persist("pms/purchaseReqs", arrToMap(state.purchaseReqs));
   const saveBatches = () => persist("pms/batches", arrToMap(state.batches));
   const saveMI = () => persist("pms/materialIssues", arrToMap(state.materialIssues));
@@ -1318,7 +1329,7 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     document.getElementById("stat-boms-sub").textContent = `${state.products.length} product(s) with active BOM`;
     const shortages = state.mrpResults.filter(r=>r.net>0);
     countUp(document.getElementById("stat-shortage"), shortages.length);
-    const pendingPR = state.purchaseReqs.filter(p=>p.status==="Draft"||p.status==="Submitted");
+    const pendingPR = state.purchaseReqs.filter(p=>p.status==="Draft"||p.status==="Submitted"||p.status==="Approved");
     countUp(document.getElementById("stat-pr"), pendingPR.length);
 
     // recent POs
@@ -1814,22 +1825,137 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     wrap.innerHTML = blocks || emptyState("mrp","No MRP results","Run MRP from a Customer PO row.");
   }
 
-  // ---------- Purchasing (auto-created PRs) ----------
+  // ---------- Purchasing (PRs -> suppliers -> Owner approval -> one PO per supplier) ----------
+  let prSelected = new Set();
+  function supplierName(id){ const x = state.suppliers.find(v=>v.id===id); return x ? x.name : ""; }
+  function supplierOptionsHtml(selectedId, ids){
+    const list = ids ? state.suppliers.filter(v=>ids.includes(v.id)) : state.suppliers;
+    return `<option value="">— Select supplier —</option>` + list.map(v=>`<option value="${v.id}" ${v.id===selectedId?"selected":""}>${esc(v.name)}</option>`).join("")
+      + `<option value="__new__" style="color:var(--blue-600);font-weight:700;">+ Add new supplier…</option>`;
+  }
+  function openNewSupplierModal(onCreated){
+    openModal({
+      title:"Add Supplier",
+      body:`<div class="field"><label>Supplier Name (raw &amp; packaging materials)</label><input id="sup-name" /></div>
+        <div class="field-row"><div class="field"><label>Phone</label><input id="sup-phone" /></div><div class="field"><label>Notes</label><input id="sup-notes" /></div></div>`,
+      footer:[
+        {label:"Cancel", cls:"btn-ghost", action:()=>{ closeModal(); if(onCreated) onCreated(null); }},
+        {label:"Save Supplier", cls:"btn-primary", action:()=>{
+          const name = document.getElementById("sup-name").value.trim();
+          if(!name){ toast("Enter the supplier name"); return; }
+          let sup = state.suppliers.find(v=>v.name.toLowerCase()===name.toLowerCase());
+          if(!sup){ sup = { id: uid(), name, phone: document.getElementById("sup-phone").value.trim(), notes: document.getElementById("sup-notes").value.trim(), createdAt: todayISO() }; state.suppliers.push(sup); saveSuppliers(); }
+          closeModal(); if(onCreated) onCreated(sup.id); else renderAll();
+        }}
+      ]
+    });
+  }
+  PMS.togglePR = function(id, on){ if(on) prSelected.add(id); else prSelected.delete(id); };
+  PMS.toggleAllPR = function(on){ prSelected = new Set(on ? state.purchaseReqs.filter(p=>p.status==="Draft"||p.status==="Submitted").map(p=>p.id) : []); renderPurchasing(); };
+  PMS.openSuppliersList = function(){
+    openModal({
+      title:"Suppliers",
+      body: state.suppliers.length ? `<table><thead><tr><th>Name</th><th>Phone</th><th>Notes</th></tr></thead><tbody>${state.suppliers.map(v=>`<tr><td>${esc(v.name)}</td><td>${esc(v.phone||"—")}</td><td>${esc(v.notes||"—")}</td></tr>`).join("")}</tbody></table>` : `<div class="hint">No suppliers yet.</div>`,
+      footer:[{label:"Close", cls:"btn-ghost", action:closeModal},{label:"+ Add Supplier", cls:"btn-primary", action:()=>openNewSupplierModal(()=>{ closeModal(); renderAll(); PMS.openSuppliersList(); })}]
+    });
+  };
+  PMS.openCandidatesModal = function(){
+    if(!canDo("managePurchasing")){ toast("Requires Purchasing role"); return; }
+    const ids = [...prSelected].filter(id=>{ const pr = state.purchaseReqs.find(p=>p.id===id); return pr && (pr.status==="Draft"||pr.status==="Submitted"); });
+    if(!ids.length){ toast("Select at least one Draft PR first"); return; }
+    const first = state.purchaseReqs.find(p=>p.id===ids[0]);
+    const pre = new Set(first.candidates||[]);
+    openModal({
+      title:`Candidate suppliers for ${ids.length} item(s)`,
+      body:`<div class="hint" style="margin-bottom:10px;">Pick one or more suppliers who can supply the selected items. The Owner chooses the final supplier at approval.</div>
+        <div id="cand-list">${state.suppliers.map(v=>`<label style="display:flex;gap:8px;align-items:center;padding:6px 0;"><input type="checkbox" class="cand-cb" value="${v.id}" ${pre.has(v.id)?"checked":""}/> ${esc(v.name)}</label>`).join("") || '<div class="hint">No suppliers yet — add one.</div>'}</div>
+        <button class="btn btn-ghost btn-sm" id="cand-add" style="margin-top:8px;">+ Add new supplier</button>`,
+      footer:[
+        {label:"Cancel", cls:"btn-ghost", action:closeModal},
+        {label:"Save", cls:"btn-primary", action:()=>{
+          const chosen = [...document.querySelectorAll(".cand-cb:checked")].map(c=>c.value);
+          ids.forEach(id=>{ const pr = state.purchaseReqs.find(p=>p.id===id); pr.candidates = chosen; pr.status = "Submitted"; });
+          savePR(); closeModal(); renderAll(); toast("Suppliers saved — ready for Owner approval");
+        }}
+      ]
+    });
+    document.getElementById("cand-add").addEventListener("click", ()=>{
+      openNewSupplierModal(()=>{ closeModal(); PMS.openCandidatesModal(); });
+    });
+  };
+  PMS.openApprovalModal = function(){
+    if(!canDo("managePurchasing")){ toast("Requires Purchasing role"); return; }
+    const prs = [...prSelected].map(id=>state.purchaseReqs.find(p=>p.id===id)).filter(p=>p && (p.status==="Draft"||p.status==="Submitted"));
+    if(!prs.length){ toast("Select at least one PR to send for approval"); return; }
+    openModal({
+      title:"Owner Approval — Purchase",
+      wide:true,
+      body:`<div class="hint" style="margin-bottom:10px;">Only the Owner can approve and choose the supplier. Items going to the same supplier are issued on <b>one</b> purchase order.</div>
+        <table><thead><tr><th>PR</th><th>Material</th><th class="right">Qty</th><th>Supplier</th></tr></thead><tbody>
+        ${prs.map(pr=>`<tr><td class="num">${esc(pr.prNumber)}</td><td>${esc(pr.materialCode)} — ${esc(pr.materialName)}</td><td class="right num">${fmtNum(pr.shortageQty)} ${esc(pr.uom)}</td>
+          <td><select class="appr-sup" data-pr="${pr.id}" style="min-width:180px;">${supplierOptionsHtml(pr.chosenSupplierId || ((pr.candidates||[]).length===1?pr.candidates[0]:""), (pr.candidates&&pr.candidates.length)?pr.candidates:null)}</select></td></tr>`).join("")}
+        </tbody></table>
+        <div class="field" style="margin-top:14px;"><label>Owner Password</label><input type="password" id="appr-pw" placeholder="Enter Owner password" /></div>
+        <div id="appr-err" style="color:#C0392B;font-size:12px;min-height:16px;"></div>`,
+      footer:[
+        {label:"Cancel", cls:"btn-ghost", action:closeModal},
+        {label:"Approve & Issue PO", cls:"btn-primary", action:()=>{
+          const err = document.getElementById("appr-err");
+          if(document.getElementById("appr-pw").value !== (rolePasswords.Owner || DEFAULT_PASSWORDS.Owner)){ err.textContent = "Incorrect Owner password."; return; }
+          const picks = {};
+          let missing = false;
+          document.querySelectorAll(".appr-sup").forEach(sel=>{ if(!sel.value || sel.value==="__new__") missing = true; else picks[sel.dataset.pr] = sel.value; });
+          if(missing){ err.textContent = "Choose a supplier for every item."; return; }
+          const bySupplier = {};
+          prs.forEach(pr=>{ (bySupplier[picks[pr.id]] = bySupplier[picks[pr.id]] || []).push(pr); });
+          Object.entries(bySupplier).forEach(([supId, list])=>{
+            const spo = { id: uid(), spoNumber: nextSPONumber(), supplierId: supId, supplierName: supplierName(supId), date: todayISO(), status:"Approved", approvedBy:"Owner",
+              lines: list.map(pr=>({ prId: pr.id, prNumber: pr.prNumber, materialCode: pr.materialCode, materialName: pr.materialName, uom: pr.uom, qty: pr.shortageQty, poSerial: pr.poSerial||"" })) };
+            state.supplierOrders.push(spo);
+            list.forEach(pr=>{ pr.status="Approved"; pr.chosenSupplierId=supId; pr.supplierName=spo.supplierName; pr.spoId=spo.id; pr.spoNumber=spo.spoNumber; pr.approvedAt=todayISO(); });
+          });
+          prSelected = new Set();
+          savePR(); saveSPO(); closeModal(); renderAll();
+          toast(`Approved — ${Object.keys(bySupplier).length} purchase order(s) issued`);
+        }}
+      ]
+    });
+    document.querySelectorAll(".appr-sup").forEach(sel=>sel.addEventListener("change",()=>{
+      if(sel.value==="__new__") openNewSupplierModal(()=>{ closeModal(); PMS.openApprovalModal(); });
+    }));
+  };
   function renderPurchasing(){
     const wrap = document.getElementById("pr-wrap");
-    if(!state.purchaseReqs.length){ wrap.innerHTML = emptyState("pr","No Purchase Requisitions","When MRP finds a shortage, a PR is auto-created here for the shortage quantity only."); return; }
-    wrap.innerHTML = `<div class="card"><table><thead><tr>
-      <th>PR Number</th><th>Linked PO</th><th>Material</th><th class="right">Shortage Qty</th><th>Required Date</th><th>Priority</th><th>Status</th>
+    const can = canDo("managePurchasing");
+    const toolbar = `<div class="filter-row" style="margin-bottom:12px;">
+      <button class="btn btn-ghost btn-sm" onclick="PMS.openSuppliersList()">Suppliers (${state.suppliers.length})</button>
+      <button class="btn btn-ghost btn-sm" ${can?"":"disabled"} onclick="PMS.openCandidatesModal()">Assign Suppliers to Selected</button>
+      <button class="btn btn-primary btn-sm" ${can?"":"disabled"} onclick="PMS.openApprovalModal()">Send for Owner Approval</button>
+    </div>`;
+    if(!state.purchaseReqs.length){ wrap.innerHTML = toolbar + emptyState("pr","No Purchase Requisitions","When MRP finds a shortage, a PR is auto-created here for the shortage quantity only."); return; }
+    const spoRows = [...state.supplierOrders].reverse();
+    wrap.innerHTML = toolbar + `<div class="card"><table><thead><tr>
+      <th><input type="checkbox" onchange="PMS.toggleAllPR(this.checked)"/></th><th>PR Number</th><th>Linked PO</th><th>Material</th><th class="right">Shortage Qty</th><th>Candidate Suppliers</th><th>Required Date</th><th>Priority</th><th>Status</th><th>Supplier / PO</th>
     </tr></thead><tbody>
-    ${[...state.purchaseReqs].reverse().map(pr=>`<tr>
+    ${[...state.purchaseReqs].reverse().map(pr=>{
+      const selectable = pr.status==="Draft"||pr.status==="Submitted";
+      return `<tr>
+      <td>${selectable?`<input type="checkbox" ${prSelected.has(pr.id)?"checked":""} onchange="PMS.togglePR('${pr.id}',this.checked)"/>`:""}</td>
       <td class="num">${esc(pr.prNumber)}</td><td class="num">${esc(pr.poSerial)}</td>
       <td>${esc(pr.materialCode)} — ${esc(pr.materialName)}</td>
       <td class="right num">${fmtNum(pr.shortageQty)} ${esc(pr.uom)}</td>
+      <td>${(pr.candidates||[]).map(id=>`<span class="tag">${esc(supplierName(id))}</span>`).join(" ") || "—"}</td>
       <td class="num">${esc(pr.requiredDate||"—")}</td><td><span class="tag">${esc(pr.priority)}</span></td>
       <td><span class="pill ${poStatusClass(pr.status.toLowerCase())}">${esc(pr.status)}</span></td>
-    </tr>`).join("")}
-    </tbody></table></div>`;
+      <td>${pr.supplierName?`${esc(pr.supplierName)}<br><span class="num">${esc(pr.spoNumber||"")}</span>`:"—"}</td>
+    </tr>`;}).join("")}
+    </tbody></table></div>
+    ${spoRows.length?`<div class="section-title" style="margin-top:22px;"><span>Supplier Purchase Orders</span></div><div class="card"><table><thead><tr><th>PO #</th><th>Supplier</th><th>Date</th><th class="right">Items</th><th>Status</th><th></th></tr></thead><tbody>
+      ${spoRows.map(o=>`<tr><td class="num">${esc(o.spoNumber)}</td><td>${esc(o.supplierName)}</td><td class="num">${esc(o.date)}</td><td class="right num">${o.lines.length}</td><td><span class="tag">${esc(o.status)}</span></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="PMS.printSPO('${o.id}')">View / Print</button></td></tr>`).join("")}
+    </tbody></table></div>`:""}`;
   }
+  PMS.printSPO = function(id){ switchView("documents"); docsTab="spo"; renderDocuments(id); };
 
   // ---------- Documents ----------
   function docHeader(docNumber, dateStr){
@@ -1844,20 +1970,22 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
   let docsTab = "po";
   let docFocus = null;
   const DOC_TABS = [
-    {k:"po", l:"Customer PO"}, {k:"grn", l:"Goods Receipt (GRN)"}, {k:"mi", l:"Material Issue"},
-    {k:"completion", l:"Production Completion"}, {k:"fg", l:"Finished Goods Release"}, {k:"delivery", l:"Delivery Note"}
+    {k:"po", l:"Customer PO"}, {k:"spo", l:"Supplier PO"}, {k:"grn", l:"Goods Receipt (GRN)"}, {k:"mi", l:"Material Issue"},
+    {k:"completion", l:"Production Completion"}, {k:"fg", l:"Finished Goods Receipt"}, {k:"delivery", l:"Delivery Note"}
   ];
   function docList(type){
     if(type==="po") return state.customerPOs;
-    if(type==="grn") return state.batches.filter(b=>b.grnNumber && b.grnNumber.startsWith("GRN-"));
+    if(type==="spo") return state.supplierOrders;
+    if(type==="grn"){ const seen = new Set(); return state.batches.filter(b=>{ if(!b.grnNumber || !b.grnNumber.startsWith("GRN-") || seen.has(b.grnNumber)) return false; seen.add(b.grnNumber); return true; }); }
     if(type==="mi") return state.materialIssues;
     if(type==="completion") return state.productionOrders.filter(o=>o.status==="Completed"||o.status==="Quality Inspection");
-    if(type==="fg") return state.finishedGoods.filter(f=>f.status==="Released");
+    if(type==="fg") return state.finishedGoods;
     if(type==="delivery") return state.deliveries;
     return [];
   }
   function docNumberOf(type, item){
     if(type==="po") return item.internalSerial;
+    if(type==="spo") return item.spoNumber;
     if(type==="grn") return item.grnNumber;
     if(type==="mi") return item.miNumber;
     if(type==="completion") return "COMP-"+item.orderNumber;
@@ -1949,10 +2077,11 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
   }
   function docSummary(type, item){
     if(type==="po") return `${item.customerName} — ${productName(item.productId)} — ${fmtNum(item.qty)} ${item.uom}`;
-    if(type==="grn") return `${item.materialCode} — ${item.materialName} — ${fmtNum(item.qtyReceived)} ${item.uom}`;
+    if(type==="spo") return `${item.supplierName} — ${item.lines.length} item(s)`;
+    if(type==="grn"){ const sib = state.batches.filter(b=>b.grnNumber===item.grnNumber); return `${item.supplierName?item.supplierName+" — ":""}${sib.length} item(s): ${sib.map(b=>b.materialCode).join(", ")}`; }
     if(type==="mi") return `${item.orderNumber} — ${item.materialCode} — ${fmtNum(item.qty)} ${item.uom}`;
     if(type==="completion") return `${productName(item.productId)} — Planned ${fmtNum(item.plannedQty)}`;
-    if(type==="fg") return `Good ${fmtNum(item.goodQty)} — Yield ${fmtNum(item.yieldPct)}%`;
+    if(type==="fg"){ const o = state.productionOrders.find(x=>x.id===item.prodOrderId); return `${o?productName(o.productId)+" — ":""}Batch ${item.fgBatch} — Good ${fmtNum(item.goodQty)} — ${item.status}`; }
     if(type==="delivery") return `${item.customerName} — ${item.siteName||"—"} — ${fmtNum(item.qty)} ${item.uom}`;
     return "";
   }
@@ -1969,6 +2098,33 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
       </tr>`).join("")}
     </tbody></table>`;
   }
+  function rmBatchesForOrder(orderNumber){
+    const rows = [];
+    state.materialIssues.filter(m=>m.orderNumber===orderNumber).forEach(m=>{
+      (m.batches||[]).forEach(b=>rows.push({ code:m.materialCode, name:m.materialName, batch:b.batch, expiry:b.expiry, qty:`${fmtNum(b.qty)} ${m.uom||""}`, notes:`Issued ${m.miNumber||""}` }));
+    });
+    return rows;
+  }
+  function rmBatchNumbersForOrder(order){
+    const set = [];
+    state.materialIssues.filter(m=>m.orderId===order.id || m.orderNumber===order.orderNumber).forEach(m=>{
+      (m.batches||[]).forEach(b=>{ if(b.batch && !set.includes(b.batch)) set.push(b.batch); });
+    });
+    const real = set.filter(x=>!/^(OPEN|RET)-/.test(x));
+    return real.length ? real : set;
+  }
+  function batchSupplierInfo(batchNo, materialCode){
+    const b = state.batches.find(x=>x.batchNumber===batchNo && (!materialCode || x.materialCode===materialCode)) || state.batches.find(x=>x.batchNumber===batchNo);
+    if(!b) return { supplierName:"—", spoNumber:"—", grnNumber:"—", approvedBy:"—", approvedAt:"" };
+    const spo = state.supplierOrders.find(s=>s.id===b.spoId || (b.spoNumber && s.spoNumber===b.spoNumber));
+    return { supplierName: b.supplierName || (spo?spo.supplierName:"") || "—", spoNumber: b.spoNumber || (spo?spo.spoNumber:"") || "—",
+      grnNumber: b.grnNumber || "—", approvedBy: spo ? (spo.approvedBy||"Owner") : "—", approvedAt: spo ? (spo.approvedAt||spo.date||"") : "" };
+  }
+  function rmBatchesSection(orderNumber){
+    const rows = rmBatchesForOrder(orderNumber);
+    return `<div style="margin:16px 0 6px;font-weight:700;">Raw Material Batches Used (Traceability)</div>` +
+      (rows.length ? docItemsTable(rows) : `<div class="hint">No material issues recorded for this production order.</div>`);
+  }
   function renderDocSheet(type, id){
     if(type==="po"){
       const po = state.customerPOs.find(p=>p.id===id); if(!po) return "";
@@ -1983,15 +2139,26 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
         <div class="doc-foot"><div class="sig"><div class="line"></div>Sales Approval</div><div class="sig"><div class="line"></div>Planning Approval</div><div id="qr-${po.id}"></div></div>
       </div>`;
     }
+    if(type==="spo"){
+      const o = state.supplierOrders.find(x=>x.id===id); if(!o) return "";
+      return `<div class="doc-sheet">${docHeader(o.spoNumber, o.date)}
+        <div class="doc-title">Supplier Purchase Order</div>
+        ${docMetaBar([["Supplier",o.supplierName],["Approved By",o.approvedBy||"Owner"],["Status",o.status],["Items",String(o.lines.length)]])}
+        ${docItemsTable(o.lines.map(l=>({ code:l.materialCode, name:l.materialName, batch:"—", expiry:"—", qty:`${fmtNum(l.qty)} ${l.uom}`, notes:`${l.prNumber}${l.poSerial?" — "+l.poSerial:""}` })))}
+        <div class="doc-foot"><div class="sig"><div class="line"></div>Purchasing</div><div class="sig"><div class="line"></div>Owner Approval</div></div>
+      </div>`;
+    }
     if(type==="grn"){
-      const b = state.batches.find(x=>x.id===id); if(!b) return "";
-      return `<div class="doc-sheet">${docHeader(b.grnNumber, b.receivedDate)}
+      const b0 = state.batches.find(x=>x.id===id); if(!b0) return "";
+      const rows = state.batches.filter(x=>x.grnNumber===b0.grnNumber);
+      const uniq = (k)=>[...new Set(rows.map(r=>r[k]).filter(Boolean))].join(", ");
+      return `<div class="doc-sheet">${docHeader(b0.grnNumber, b0.receivedDate)}
         <div class="doc-title">Goods Receipt Note</div>
-        ${docMetaBar([["Customer PO #",b.poNumber],["Internal Serial",b.internalSerial],["Warehouse",b.warehouse],["QC Status",b.qcStatus]])}
-        ${docItemsTable([{
+        ${docMetaBar([["Supplier",b0.supplierName],["Supplier PO #",b0.spoNumber],["Customer PO #",uniq("poNumber")],["Internal Serial",uniq("internalSerial")],["Warehouse",b0.warehouse]])}
+        ${docItemsTable(rows.map(b=>({
           code:b.materialCode, name:b.materialName, batch:b.batchNumber, expiry:b.expiryDate,
-          qty:`${fmtNum(b.qtyReceived)} ${b.uom}`, notes:`Received into ${b.warehouse} — QC: ${b.qcStatus}`
-        }])}
+          qty:`${fmtNum(b.qtyReceived)} ${b.uom}`, notes:`QC: ${b.qcStatus}`
+        })))}
         <div class="doc-foot"><div class="sig"><div class="line"></div>Warehouse Received By</div><div class="sig"><div class="line"></div>Quality Signature</div></div>
       </div>`;
     }
@@ -2019,6 +2186,7 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
           code: product?product.code:"—", name: productName(o.productId), batch: fg?fg.fgBatch:"—", expiry: fg?fg.expiryDate:"—",
           qty: fg?`${fmtNum(fg.goodQty)} ${po?po.uom:""}`:"—", notes: fg?`Yield ${fmtNum(fg.yieldPct)}% — Rejected ${fmtNum(fg.rejectedQty)}`:"Pending Final QC"
         }])}
+        ${rmBatchesSection(o.orderNumber)}
         <div class="doc-foot"><div class="sig"><div class="line"></div>Production Supervisor</div><div class="sig"><div class="line"></div>Quality Manager</div></div>
       </div>`;
     }
@@ -2027,12 +2195,13 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
       const o = state.productionOrders.find(x=>x.id===f.prodOrderId);
       const product = o ? state.products.find(p=>p.id===o.productId) : null;
       return `<div class="doc-sheet">${docHeader(f.fgBatch, f.productionDate)}
-        <div class="doc-title">Finished Goods Release</div>
-        ${docMetaBar([["Customer PO #",f.poNumber],["Internal Serial",f.internalSerial],["Warehouse",f.warehouse],["Status",f.status]])}
+        <div class="doc-title">Finished Goods Receipt${f.status==="Released"?" / Release":""}</div>
+        ${docMetaBar([["Finished Product",product?product.name:"Finished Product"],["Production Batch",f.fgBatch],["Production Order",o?o.orderNumber:"—"],["Customer PO #",f.poNumber],["Internal Serial",f.internalSerial],["Warehouse",f.warehouse],["Status",f.status]])}
         ${docItemsTable([{
           code: product?product.code:"—", name: product?product.name:"Finished Product", batch:f.fgBatch, expiry:f.expiryDate,
           qty:`${fmtNum(f.goodQty)}`, notes:`Rejected ${fmtNum(f.rejectedQty)} — Yield ${fmtNum(f.yieldPct)}%`
         }])}
+        ${o?rmBatchesSection(o.orderNumber):""}
         <div class="doc-foot"><div class="sig"><div class="line"></div>Quality Release</div><div class="sig"><div class="line"></div>Warehouse Received</div></div>
       </div>`;
     }
@@ -2072,8 +2241,12 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     if(!q){ result.innerHTML = ""; return; }
     let po = state.customerPOs.find(p=> p.internalSerial===q || p.poNumber===q);
     if(!po){
-      const fgMatch = state.finishedGoods.find(f=>f.fgBatch===q);
+      const fgMatch = state.finishedGoods.find(f=>f.fgBatch===q) || state.finishedGoods.find(f=>(f.fgBatch||"").includes(q) || (f.rmBatches||[]).includes(q));
       if(fgMatch) po = state.customerPOs.find(p=>p.id===fgMatch.poId);
+      if(!po){
+        const mi = state.materialIssues.find(m=>(m.batches||[]).some(b=>b.batch===q));
+        if(mi){ const o = state.productionOrders.find(x=>x.id===mi.orderId); if(o) po = state.customerPOs.find(p=>p.id===o.poId); }
+      }
     }
     if(!po){ result.innerHTML = `<div class="banner">No record found for "${esc(q)}". Try an Internal Serial like ${esc(state.customerPOs[0]?.internalSerial||'PROD-2026-000001')}, a Customer PO #, or an FG batch like FG-YYYYMMDD-001.</div>`; return; }
     const rows = state.mrpResults.filter(r=>r.poId===po.id);
@@ -2111,6 +2284,7 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
         <div class="doc-grid" style="margin-bottom:16px;">
           <div><b>Customer</b>${esc(po.customerName)}</div>
           <div><b>Customer PO #</b>${esc(po.poNumber)}</div>
+          <div><b>Item Code</b>${esc(state.products.find(p=>p.id===po.productId)?.code||"—")}</div>
           <div><b>Product</b>${esc(productName(po.productId))} (BOM ${esc(state.products.find(p=>p.id===po.productId)?.bomVersion||"—")})</div>
           <div><b>Quantity</b>${fmtNum(po.qty)} ${esc(po.uom)}</div>
         </div>
@@ -2121,8 +2295,8 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
         </tbody></table>` : `<div class="hint">MRP not run yet for this PO.</div>`}
 
         ${prs.length ? `<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);letter-spacing:.04em;text-transform:uppercase;margin:14px 0 6px;">Purchase Requisitions</div>
-        <table><thead><tr><th>PR #</th><th>Material</th><th class="right">Shortage</th><th>Status</th></tr></thead><tbody>
-          ${prs.map(pr=>`<tr><td class="num">${esc(pr.prNumber)}</td><td>${esc(pr.materialName)}</td><td class="right num">${fmtNum(pr.shortageQty)}</td><td><span class="pill pill-draft">${esc(pr.status)}</span></td></tr>`).join("")}
+        <table><thead><tr><th>PR #</th><th>Material</th><th class="right">Shortage</th><th>Supplier</th><th>SPO #</th><th>Owner Approval</th><th>Status</th></tr></thead><tbody>
+          ${prs.map(pr=>{ const spo = state.supplierOrders.find(s=>s.id===pr.spoId || (pr.spoNumber && s.spoNumber===pr.spoNumber)); const appr = spo||pr.spoNumber ? `✔ ${esc((spo&&spo.approvedBy)||"Owner")}${(pr.approvedAt||(spo&&spo.date))?" — "+esc(String(pr.approvedAt||spo.date).slice(0,10)):""}` : "—"; return `<tr><td class="num">${esc(pr.prNumber)}</td><td>${esc(pr.materialName)}</td><td class="right num">${fmtNum(pr.shortageQty)}</td><td>${esc(pr.supplierName||(spo&&spo.supplierName)||"—")}</td><td class="num">${esc(pr.spoNumber||(spo&&spo.spoNumber)||"—")}</td><td>${appr}</td><td><span class="pill pill-draft">${esc(pr.status)}</span></td></tr>`; }).join("")}
         </tbody></table>` : ""}
 
         ${order ? `<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);letter-spacing:.04em;text-transform:uppercase;margin:14px 0 6px;">Production Order — ${esc(order.orderNumber)} <span class="pill ${prodStatusClass(order.status)}" style="margin-left:6px;">${esc(order.status)}</span></div>
@@ -2131,8 +2305,8 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
         </tbody></table>` : `<div class="hint" style="margin-top:14px;">No Production Order created yet for this PO.</div>`}
 
         ${issues.length ? `<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);letter-spacing:.04em;text-transform:uppercase;margin:14px 0 6px;">Material Issues (Batches consumed)</div>
-        <table><thead><tr><th>MI #</th><th>Material</th><th class="right">Qty</th><th>Batches (FEFO)</th></tr></thead><tbody>
-          ${issues.map(m=>`<tr><td class="num">${esc(m.miNumber)}</td><td>${esc(m.materialCode)} — ${esc(m.materialName)}</td><td class="right num">${fmtNum(m.qty)}</td><td style="font-size:11.5px;">${m.batches.map(b=>esc(b.batch)+" ("+fmtNum(b.qty)+")").join(", ")}</td></tr>`).join("")}
+        <table><thead><tr><th>MI #</th><th>Material</th><th class="right">Qty</th><th>Batch (FEFO)</th><th class="right">Batch Qty</th><th>Supplier</th><th>SPO # / GRN #</th><th>Owner Approval</th></tr></thead><tbody>
+          ${issues.map(m=>(m.batches&&m.batches.length?m.batches:[{batch:"—",qty:m.qty}]).map((b,i)=>{ const s = batchSupplierInfo(b.batch, m.materialCode); return `<tr><td class="num">${i===0?esc(m.miNumber):""}</td><td>${i===0?esc(m.materialCode)+" — "+esc(m.materialName):""}</td><td class="right num">${i===0?fmtNum(m.qty):""}</td><td class="num">${esc(b.batch)}${b.expiry?`<div style="font-size:10.5px;color:var(--ink-soft);">Exp ${esc(b.expiry)}</div>`:""}</td><td class="right num">${fmtNum(b.qty)}</td><td>${esc(s.supplierName)}</td><td class="num" style="font-size:11.5px;">${esc(s.spoNumber)} / ${esc(s.grnNumber)}</td><td>${s.approvedBy!=="—"?"✔ "+esc(s.approvedBy)+(s.approvedAt?" — "+esc(String(s.approvedAt).slice(0,10)):""):"—"}</td></tr>`; }).join("")).join("")}
         </tbody></table>` : ""}
 
         ${returns.length ? `<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);letter-spacing:.04em;text-transform:uppercase;margin:14px 0 6px;">Returns &amp; Waste</div>
@@ -2142,14 +2316,17 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
 
         ${fg ? `<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);letter-spacing:.04em;text-transform:uppercase;margin:14px 0 6px;">Finished Goods Batch</div>
         <div class="doc-grid">
-          <div><b>FG Batch</b>${esc(fg.fgBatch)}</div><div><b>Status</b><span class="pill ${qcClass(fg.status==='Quarantine'?'QUARANTINE':(fg.status==='Released'?'RELEASED':'REJECTED'))}">${esc(fg.status)}</span></div>
+          <div><b>Item Code</b>${esc(state.products.find(p=>p.id===po.productId)?.code||"—")}</div><div><b>Product Name</b>${esc(productName(po.productId))}</div>
+          <div><b>FG Batch</b>${esc(fg.fgBatch)}</div><div><b>Expiry Date</b>${esc(fg.expiryDate||"—")}</div>
+          <div><b>Status</b><span class="pill ${qcClass(fg.status==='Quarantine'?'QUARANTINE':(fg.status==='Released'?'RELEASED':'REJECTED'))}">${esc(fg.status)}</span></div>
           <div><b>Good Qty</b>${fmtNum(fg.goodQty)}</div><div><b>Yield</b>${fmtNum(fg.yieldPct)}%</div>
           <div><b>Warehouse</b>${esc(fg.warehouse)}</div><div><b>Production Date</b>${esc(fg.productionDate)}</div>
+          <div><b>RM Batches Used</b>${esc((fg.rmBatches&&fg.rmBatches.length?fg.rmBatches:rmBatchNumbersForOrder(order)).join(", ")||"—")}</div>
         </div>` : ""}
 
         ${deliveries.length ? `<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);letter-spacing:.04em;text-transform:uppercase;margin:14px 0 6px;">Delivery</div>
-        <table><thead><tr><th>Delivery #</th><th>Site</th><th class="right">Qty</th><th>Date</th></tr></thead><tbody>
-          ${deliveries.map(d=>`<tr><td class="num">${esc(d.deliveryNumber)}</td><td>${esc(d.siteName||"—")}</td><td class="right num">${fmtNum(d.qty)}</td><td class="num">${esc(d.deliveryDate)}</td></tr>`).join("")}
+        <table><thead><tr><th>Delivery #</th><th>Item Code</th><th>Product</th><th>FG Batch</th><th>Expiry</th><th>Site</th><th class="right">Qty</th><th>Date</th></tr></thead><tbody>
+          ${deliveries.map(d=>{ const dp = state.products.find(p=>p.id===po.productId); const dfg = state.finishedGoods.find(f=>f.id===d.fgId); return `<tr><td class="num">${esc(d.deliveryNumber)}</td><td class="num">${esc(dp?dp.code:"—")}</td><td>${esc(productName(po.productId))}</td><td class="num">${esc(d.fgBatch||(dfg&&dfg.fgBatch)||"—")}</td><td class="num">${esc(d.fgExpiryDate||(dfg&&dfg.expiryDate)||"—")}</td><td>${esc(d.siteName||"—")}</td><td class="right num">${fmtNum(d.qty)}</td><td class="num">${esc(d.deliveryDate)}</td></tr>`; }).join("")}
         </tbody></table>` : ""}
 
         <div class="banner ${po.status==="delivered" ? "good" : "info"}" style="margin-top:16px;">${po.status==="delivered" ? "This order has completed the full chain — delivered to the customer's site." : "This traceability chain will keep extending automatically as the order moves through Warehouse → Production → QC → Delivery."}</div>
@@ -2417,64 +2594,105 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     </tbody></table></div>`;
   }
 
-  document.getElementById("btn-add-grn").addEventListener("click", openGRNModal);
-  function openGRNModal(){
-    const openPRs = state.purchaseReqs.filter(p=>p.status==="Draft"||p.status==="Submitted");
-    const prOptions = `<option value="">— Manual receipt (no PR) —</option>` + openPRs.map(pr=>`<option value="${pr.id}">${esc(pr.prNumber)} — ${esc(pr.materialCode)} (need ${fmtNum(pr.shortageQty)})</option>`).join("");
+  document.getElementById("btn-add-grn").addEventListener("click", ()=>openGRNModal());
+  function openGRNModal(draft){
+    draft = draft || {};
+    const openSPOs = state.supplierOrders.filter(o=>o.status==="Approved");
+    const spoOptions = `<option value="">— Manual receipt (no supplier PO) —</option>` + openSPOs.map(o=>`<option value="${o.id}" ${o.id===draft.spoId?"selected":""}>${esc(o.spoNumber)} — ${esc(o.supplierName)} (${o.lines.length} items)</option>`).join("");
     const matOptions = combinedLib().map(m=>`<option value="${m.code}">${m.code} — ${m.name}</option>`).join("");
     openModal({
       title:"New Goods Receipt (GRN)",
+      wide:true,
       body:`
-        <div class="field"><label>Link to Purchase Requisition (optional)</label><select id="g-pr">${prOptions}</select></div>
         <div class="field-row">
-          <div class="field"><label>Material</label><select id="g-mat"><option value="__new__" style="color:var(--blue-600);font-weight:700;">+ Create New Material…</option>${matOptions}</select></div>
-          <div class="field"><label>Quantity Received</label><input type="number" id="g-qty" step="0.01" /></div>
+          <div class="field"><label>Supplier Purchase Order (optional)</label><select id="g-spo">${spoOptions}</select></div>
+          <div class="field"><label>Supplier</label><select id="g-sup">${supplierOptionsHtml(draft.supplierId)}</select></div>
         </div>
-        <div class="field-row">
-          <div class="field"><label>Batch Number</label><input id="g-batch" /></div>
-          <div class="field"><label>Expiry Date</label><input type="date" id="g-exp" /></div>
-        </div>
-        <div class="hint">Warehouse: Production Receiving &amp; Staging. Status will start as <b>PENDING</b> until Incoming QC releases it.</div>
+        <table style="margin-top:8px;"><thead><tr><th>Material</th><th>Qty</th><th>Batch No.</th><th>Expiry</th><th></th></tr></thead><tbody id="g-rows"></tbody></table>
+        <button class="btn btn-ghost btn-sm" id="g-addrow" style="margin-top:8px;">+ Add item</button>
+        <div class="hint" style="margin-top:10px;">All items from this supplier are issued on <b>one</b> GRN. Status starts as <b>PENDING</b> until Incoming QC releases it.</div>
       `,
       footer:[
         {label:"Cancel", cls:"btn-ghost", action: closeModal},
         {label:"Create GRN", cls:"btn-primary", action:()=>{
-          const matCode = document.getElementById("g-mat").value;
-          const qty = Number(document.getElementById("g-qty").value);
-          if(!matCode || matCode==="__new__" || !qty || qty<=0){ toast("Choose a material and a valid quantity"); return; }
-          const mat = materialLookup(matCode);
-          const prId = document.getElementById("g-pr").value || null;
-          const linkedPR = prId ? state.purchaseReqs.find(p=>p.id===prId) : null;
-          const linkedPO = linkedPR ? state.customerPOs.find(p=>p.id===linkedPR.poId) : null;
-          const batch = {
-            id: uid(), materialCode: matCode, materialName: mat.name,
-            batchNumber: document.getElementById("g-batch").value.trim() || nextBatchNumber(matCode),
-            expiryDate: document.getElementById("g-exp").value, qtyReceived: qty, qtyAvailable: qty,
-            uom: mat.uom, warehouse: "Production Receiving & Staging Warehouse", qcStatus: "PENDING",
-            grnNumber: nextGRNNumber(), receivedDate: todayISO(), prId,
-            poId: linkedPO?linkedPO.id:null, poNumber: linkedPO?linkedPO.poNumber:"", internalSerial: linkedPO?linkedPO.internalSerial:""
-          };
-          state.batches.push(batch);
-          if(prId){ const pr = state.purchaseReqs.find(p=>p.id===prId); if(pr) pr.status = "Received"; savePR(); }
-          saveBatches(); closeModal(); renderAll();
-          toast("GRN created — pending Incoming QC");
+          const supId = document.getElementById("g-sup").value;
+          const spoId = document.getElementById("g-spo").value || null;
+          const rows = [...document.querySelectorAll("#g-rows tr")].map(tr=>({
+            mat: tr.querySelector(".g-mat").value, qty: Number(tr.querySelector(".g-qty").value),
+            batch: tr.querySelector(".g-batch").value.trim(), exp: tr.querySelector(".g-exp").value, prId: tr.dataset.pr||null
+          })).filter(r=>r.mat && r.mat!=="__new__" && r.qty>0);
+          if(!supId || supId==="__new__"){ toast("Choose the supplier"); return; }
+          if(!rows.length){ toast("Add at least one item with a valid quantity"); return; }
+          const spo = spoId ? state.supplierOrders.find(o=>o.id===spoId) : null;
+          const grnNumber = nextGRNNumber();
+          const usedBatch = new Set();
+          rows.forEach(r=>{
+            const mat = materialLookup(r.mat);
+            const linkedPR = r.prId ? state.purchaseReqs.find(p=>p.id===r.prId) : null;
+            const linkedPO = linkedPR ? state.customerPOs.find(p=>p.id===linkedPR.poId) : null;
+            let bn = r.batch || nextBatchNumber(r.mat);
+            if(usedBatch.has(bn)){ bn = bn+"-"+usedBatch.size; }
+            usedBatch.add(bn);
+            state.batches.push({
+              id: uid(), materialCode: r.mat, materialName: mat.name, batchNumber: bn,
+              expiryDate: r.exp, qtyReceived: r.qty, qtyAvailable: r.qty, uom: mat.uom,
+              warehouse: "Production Receiving & Staging Warehouse", qcStatus: "PENDING",
+              grnNumber, receivedDate: todayISO(), prId: r.prId,
+              supplierId: supId, supplierName: supplierName(supId), spoId: spo?spo.id:null, spoNumber: spo?spo.spoNumber:"",
+              poId: linkedPO?linkedPO.id:null, poNumber: linkedPO?linkedPO.poNumber:"", internalSerial: linkedPO?linkedPO.internalSerial:""
+            });
+            if(linkedPR) linkedPR.status = "Received";
+          });
+          if(spo && spo.lines.every(l=>{ const pr = state.purchaseReqs.find(p=>p.id===l.prId); return pr && pr.status==="Received"; })) spo.status = "Received";
+          savePR(); saveSPO(); saveBatches(); closeModal(); renderAll();
+          toast(`${grnNumber} created — pending Incoming QC`);
           switchView("quality"); qcTab="incoming"; renderQuality();
         }}
       ]
     });
-    document.getElementById("g-mat").addEventListener("change", (e)=>{
+    const tbody = document.getElementById("g-rows");
+    function snapshot(){
+      return { supplierId: document.getElementById("g-sup").value, spoId: document.getElementById("g-spo").value };
+    }
+    function addRow(pre){
+      pre = pre || {};
+      const tr = document.createElement("tr");
+      if(pre.prId) tr.dataset.pr = pre.prId;
+      tr.innerHTML = `<td><select class="g-mat"><option value="">— Select —</option><option value="__new__" style="color:var(--blue-600);font-weight:700;">+ Create New Material…</option>${matOptions}</select></td>
+        <td><input type="number" step="0.01" class="g-qty" style="width:90px;" value="${pre.qty||""}"/></td>
+        <td><input class="g-batch" style="width:150px;" value="${esc(pre.batch||"")}"/></td>
+        <td><input type="date" class="g-exp"/></td>
+        <td><button class="icon-btn danger" type="button" title="Remove">✕</button></td>`;
+      const sel = tr.querySelector(".g-mat");
+      if(pre.mat) sel.value = pre.mat;
+      sel.addEventListener("change", ()=>{
+        if(sel.value==="__new__"){
+          const snap = snapshot();
+          openNewMaterialModal("raw", (code)=>{ closeModal(); openGRNModal(snap); });
+        } else if(sel.value && !tr.querySelector(".g-batch").value){
+          tr.querySelector(".g-batch").value = nextBatchNumber(sel.value);
+        }
+      });
+      tr.querySelector("button").addEventListener("click", ()=>{ tr.remove(); });
+      tbody.appendChild(tr);
+    }
+    document.getElementById("g-addrow").addEventListener("click", ()=>addRow());
+    document.getElementById("g-sup").addEventListener("change", (e)=>{
       if(e.target.value==="__new__"){
-        openNewMaterialModal("raw", (code)=>{ closeModal(); openGRNModal(); setTimeout(()=>{ document.getElementById("g-mat").value = code; },0); });
+        const snap = snapshot();
+        openNewSupplierModal((newId)=>{ closeModal(); snap.supplierId = newId||""; openGRNModal(snap); });
       }
     });
-    document.getElementById("g-pr").addEventListener("change", (e)=>{
-      const pr = state.purchaseReqs.find(p=>p.id===e.target.value);
-      if(pr){
-        document.getElementById("g-mat").value = pr.materialCode;
-        document.getElementById("g-qty").value = pr.shortageQty;
-        document.getElementById("g-batch").value = nextBatchNumber(pr.materialCode);
-      }
+    document.getElementById("g-spo").addEventListener("change", (e)=>{
+      const spo = state.supplierOrders.find(o=>o.id===e.target.value);
+      tbody.innerHTML = "";
+      if(spo){
+        document.getElementById("g-sup").value = spo.supplierId;
+        spo.lines.forEach(l=>{ const pr = state.purchaseReqs.find(p=>p.id===l.prId); if(pr && pr.status==="Received") return; addRow({ mat:l.materialCode, qty:l.qty, prId:l.prId, batch:nextBatchNumber(l.materialCode) }); });
+      } else addRow();
     });
+    if(draft.spoId){ document.getElementById("g-spo").dispatchEvent(new Event("change")); if(draft.supplierId) document.getElementById("g-sup").value = draft.supplierId; }
+    else addRow();
   }
   PMS.goToQC = function(){ switchView("quality"); qcTab="incoming"; renderQuality(); };
 
@@ -2633,6 +2851,7 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
           <div class="field"><label>Good Qty</label><input type="number" id="fg-good" value="${order.stages.packaging.outputQty||order.plannedQty}" /></div>
           <div class="field"><label>Rejected Qty</label><input type="number" id="fg-rejected" value="0" /></div>
         </div>
+        <div class="field"><label>FG Batch Number (same as the received Raw Material batch — editable)</label><input type="text" id="fg-batchno" value="${esc(rmBatchNumbersForOrder(order).join(' / ') || nextFGBatchNumber())}" /></div>
         <div class="field-row">
           <div class="field"><label>Production Date</label><input type="date" id="fg-proddate" value="${todayISO()}" /></div>
           <div class="field"><label>Expiry Date</label><input type="date" id="fg-expiry" value="${oneYear.toISOString().slice(0,10)}" /></div>
@@ -2649,7 +2868,9 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
           <div><b>FG Batch</b>${esc(fg.fgBatch)}</div><div><b>Customer PO #</b>${esc(po2?po2.internalSerial:"—")}</div>
           <div><b>Yield</b>${fmtNum(fg.yieldPct)}%</div><div><b>Expiry Date</b>${esc(fg.expiryDate||"—")}</div>
           <div><b>Good Qty</b>${fmtNum(fg.goodQty)}</div><div><b>Rejected Qty</b>${fmtNum(fg.rejectedQty)}</div>
+          <div><b>RM Batches Used</b>${esc((fg.rmBatches||rmBatchNumbersForOrder(order)).join(", ")||"—")}</div>
         </div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px;" ${canDo('completeProduction')?'':'disabled'} onclick="PMS.editFGBatch('${fg.id}')">✎ Edit FG Batch Number</button>
         ${fg.status==="Quarantine" ? `<div class="hint" style="margin-top:8px;">Awaiting Final QC in the Quality module before it can move to the Finished Goods Warehouse.</div>` : ""}
       </div>`;
     }
@@ -2717,7 +2938,9 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     const waste = Math.max(0, actual-good-rejected);
     const yieldPct = order.plannedQty>0 ? (good/order.plannedQty*100) : 0;
     const po = state.customerPOs.find(p=>p.id===order.poId);
-    const fg = { id: uid(), fgBatch: nextFGBatchNumber(), prodOrderId: order.id, poId: order.poId,
+    const rmB = rmBatchNumbersForOrder(order);
+    const batchInput = (document.getElementById("fg-batchno")?.value||"").trim();
+    const fg = { id: uid(), fgBatch: batchInput || rmB.join(" / ") || nextFGBatchNumber(), rmBatches: rmB, prodOrderId: order.id, poId: order.poId,
       poNumber: po?po.poNumber:"", internalSerial: po?po.internalSerial:"",
       plannedQty: order.plannedQty, actualQty: actual, goodQty: good, rejectedQty: rejected, wasteQty: waste,
       yieldPct: Math.round(yieldPct*100)/100, productionDate: prodDate, expiryDate: expDate,
@@ -2726,6 +2949,18 @@ html[dir=rtl] .num{direction:ltr;unicode-bidi:embed}
     order.status = "Quality Inspection";
     saveFG(); saveProdOrders(); renderAll(); renderProduction();
     toast(`FG batch ${fg.fgBatch} created — pending Final QC`);
+  };
+
+  PMS.editFGBatch = function(fgId){
+    const fg = state.finishedGoods.find(f=>f.id===fgId); if(!fg) return;
+    const v = prompt("FG Batch Number:", fg.fgBatch);
+    if(v===null) return;
+    const nv = v.trim(); if(!nv || nv===fg.fgBatch) return;
+    if(state.finishedGoods.some(f=>f.id!==fg.id && f.fgBatch===nv) && !confirm("This batch number already exists on another FG record. Use it anyway?")) return;
+    state.deliveries.forEach(d=>{ if(d.fgId===fg.id) d.fgBatch = nv; });
+    fg.fgBatch = nv;
+    saveFG(); saveDeliveries(); renderAll(); renderProduction();
+    toast("FG batch updated to "+nv);
   };
 
   // ================= QUALITY ==================
